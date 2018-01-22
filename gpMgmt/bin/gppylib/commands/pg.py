@@ -13,6 +13,7 @@ from gppylib.gplog import *
 from gppylib.gparray import *
 from base import *
 from unix import *
+from gppylib.commands.base import *
 
 logger = get_default_logger()
 
@@ -262,3 +263,20 @@ class PgControlData(Command):
                     (n,v) = l.split(':', 1)
                     self.data[n.strip()] = v.strip() 
         return self.data[name]
+
+class PgBaseBackup(Command):
+    def __init__(self, pgdata, host, port, excludePaths=[], ctxt=LOCAL, remoteHost=None):
+        cmd_tokens = ['pg_basebackup',
+                           '-x', '-R',
+                           '-c', 'fast']
+        cmd_tokens.append('-D')
+        cmd_tokens.append(pgdata)
+        cmd_tokens.append('-h')
+        cmd_tokens.append(host)
+        cmd_tokens.append('-p')
+        cmd_tokens.append(port)
+        for path in excludePaths:
+            cmd_tokens.append('-E')
+            cmd_tokens.append(path)
+        cmd_str = ' '.join(cmd_tokens)
+        Command.__init__(self, 'pg_basebackup', cmd_str, ctxt=ctxt, remoteHost=remoteHost)

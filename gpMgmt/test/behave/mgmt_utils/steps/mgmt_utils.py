@@ -34,6 +34,8 @@ from gppylib.operations.unix import ListRemoteFilesByPattern, CheckRemoteFile
 from test.behave_utils.gpfdist_utils.gpfdist_mgmt import Gpfdist
 from test.behave_utils.utils import *
 from test.behave_utils.PgHba import PgHba, Entry
+from test.behave_utils.cluster_setup import Gpinitsystem
+from test.behave_utils.cluster_expand import Gpexpand
 from gppylib.commands.base import Command, REMOTE
 
 
@@ -2228,3 +2230,74 @@ def impl(context, role_name, dbname):
             raise Exception("Role %s does not exist in database %s." % (role_name, dbname))
     except:
         raise Exception("Role %s does not exist in database %s." % (role_name, dbname))
+
+
+@given("a working directory of the test as '{working_directory}'")
+def impl(context, working_directory):
+    context.working_directory = working_directory
+
+@given('a cluster with no mirrors')
+def impl(context):
+    del os.environ['MASTER_DATA_DIRECTORY']
+    os.environ['MASTER_DATA_DIRECTORY'] = os.path.join(context.working_directory,
+                                                       'data/master/gpseg-1')
+    try:
+        with dbconn.connect(dbconn.DbURL(dbname='template1')) as conn:
+            curs = dbconn.execSQL(conn, "select count(*) from gp_segment_configuration where role='m';")
+            count = curs.fetchall()[0][0]
+            if count == 0:
+                print "Skipping creating a new cluster since the cluster is primary only already."
+                return
+    except:
+        pass
+
+    # May be check if there's a cluster up and check if it's setup without
+    # mirrors
+    gpinitsystem = Gpinitsystem(basedir=context.working_directory)
+    gpinitsystem.run()
+
+@given('the user runs gpexpand interview to add {num_of_segments} new segments')
+def impl(context, num_of_segments):
+    num_of_segments = int(num_of_segments)
+    directory_pairs = []
+    mirror_enabled = False # This needs to be changeds later
+    for i in range(0, num_of_segments):
+        if mirror_enabled:
+            directory_pairs.append((tempfile.mkdtemp(dir='/tmp'),tempfile.mkdtemp(dir='/tmp')))
+        else:
+            directory_pairs.append((tempfile.mkdtemp(dir='/tmp'),''))
+
+    #context.working_directory gets set during cluster initialization
+    gpexpand = Gpexpand(working_directory=context.working_directory,
+                        database='gptest')
+    output, returncode = gpexpand.do_interview(num_of_segments=num_of_segments, directory_pairs=directory_pairs)
+    if returncode != 0:
+        raise Exception("*****An error occured*****:\n %s" % output)
+
+@given('there are no gpexpand_inputfiles')
+def impl(context):
+    map(os.remove, glob.glob("gpexpand_inputfile*"))
+
+@when('the user runs gpexpand with the latest gpexpand_inputfile')
+def impl(context):
+    gpexpand = Gpexpand(working_directory=context.working_directory, database='gptest')
+    gpexpand.run()
+
+@given('the number of segments have been saved')
+def impl(context):
+    dbname = 'gptest'
+    with dbconn.connect(dbconn.DbURL(dbname=dbname)) as conn:
+        query = """SELECT count(*) from gp_segment_configuration where -1 < content"""
+        context.start_data_segments = dbconn.execSQLForSingleton(conn, query)
+
+@then('verify that the cluster has {num_of_segments} new segments')
+def impl(context, num_of_segments):
+    dbname = 'gptest'
+    with dbconn.connect(dbconn.DbURL(dbname=dbname)) as conn:
+        query = """SELECT count(*) from gp_segment_configuration where -1 < content"""
+        end_data_segments = dbconn.execSQLForSingleton(conn, query)
+
+    if int(num_of_segments) == int(end_data_segments - context.start_data_segments):
+        return
+
+    raise Exception("Incorrect amount of segments.\nprevious: %s\ncurrent: %s" % (context.start_data_segments, end_data_segments))

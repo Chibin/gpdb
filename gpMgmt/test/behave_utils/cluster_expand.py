@@ -53,7 +53,6 @@ class Gpexpand:
                 p1.stdin.write("%s\n" % directory)
 
         output, err = p1.communicate()
-        #print output
 
         return output, p1.wait()
 

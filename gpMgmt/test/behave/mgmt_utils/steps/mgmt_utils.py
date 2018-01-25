@@ -2256,9 +2256,10 @@ def impl(context):
     gpinitsystem = Gpinitsystem(basedir=context.working_directory)
     gpinitsystem.run()
 
-@given('the user runs gpexpand interview to add {num_of_segments} new segments')
-def impl(context, num_of_segments):
+@given('the user runs gpexpand interview to add {num_of_segments} new segment and {num_of_hosts} new host "{hostnames}"')
+def impl(context, num_of_segments, num_of_hosts, hostnames):
     num_of_segments = int(num_of_segments)
+    num_of_hosts = int(num_of_hosts)
     directory_pairs = []
     mirror_enabled = False # This needs to be changeds later
     for i in range(0, num_of_segments):
@@ -2267,10 +2268,14 @@ def impl(context, num_of_segments):
         else:
             directory_pairs.append((tempfile.mkdtemp(dir='/tmp'),''))
 
+    hosts = hostnames.split(',')
+    if num_of_hosts != len(hosts):
+        raise Exception("Incorrect amount of hosts. number of hosts:%s\nhostnames: %s" % (num_of_hosts, hosts))
+
     #context.working_directory gets set during cluster initialization
     gpexpand = Gpexpand(working_directory=context.working_directory,
                         database='gptest')
-    output, returncode = gpexpand.do_interview(num_of_segments=num_of_segments, directory_pairs=directory_pairs)
+    output, returncode = gpexpand.do_interview(hosts=hosts, num_of_segments=num_of_segments, directory_pairs=directory_pairs)
     if returncode != 0:
         raise Exception("*****An error occured*****:\n %s" % output)
 

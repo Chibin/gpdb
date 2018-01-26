@@ -34,7 +34,7 @@ from gppylib.operations.unix import ListRemoteFilesByPattern, CheckRemoteFile
 from test.behave_utils.gpfdist_utils.gpfdist_mgmt import Gpfdist
 from test.behave_utils.utils import *
 from test.behave_utils.PgHba import PgHba, Entry
-from test.behave_utils.cluster_setup import Gpinitsystem
+from test.behave_utils.cluster_setup import TestCluster, reset_hosts
 from test.behave_utils.cluster_expand import Gpexpand
 from gppylib.commands.base import Command, REMOTE
 
@@ -2253,8 +2253,9 @@ def impl(context):
 
     # May be check if there's a cluster up and check if it's setup without
     # mirrors
-    gpinitsystem = Gpinitsystem(basedir=context.working_directory)
-    gpinitsystem.run()
+    testcluster = TestCluster(base_dir=context.working_directory)
+    testcluster.reset_cluster()
+    testcluster.create_cluster()
 
 @given('the user runs gpexpand interview to add {num_of_segments} new segment and {num_of_hosts} new host "{hostnames}"')
 def impl(context, num_of_segments, num_of_hosts, hostnames):
@@ -2306,3 +2307,8 @@ def impl(context, num_of_segments):
         return
 
     raise Exception("Incorrect amount of segments.\nprevious: %s\ncurrent: %s" % (context.start_data_segments, end_data_segments))
+
+@given('the new host "{hostnames}" is ready to go')
+def impl(context, hostnames):
+    hosts = hostnames.split(',')
+    reset_hosts(hosts, context.working_directory)

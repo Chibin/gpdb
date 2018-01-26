@@ -63,11 +63,11 @@ class GpDeleteSystem(Command):
         return result
 
 
-class Gpinitsystem:
-    def __init__(self, hosts = None, basedir = '/tmp/default_gpinitsystem'):
+class TestCluster:
+    def __init__(self, hosts = None, base_dir = '/tmp/default_gpinitsystem'):
         """
         hosts: lists of cluster hosts. master host will be assumed to be the first element.
-        basedir: cluster directory
+        base_dir: cluster directory
         """
 
         master_host = 'localhost'
@@ -87,15 +87,15 @@ class Gpinitsystem:
         self.gpinitconfig_mirror_template = local_path('configs/gpinitconfig_mirror_template')
 
         # Output directory specific to this test
-        self.root_dir = basedir
+        self.base_dir = base_dir
 
-        self.init_file = os.path.join(self.root_dir, 'gpinitconfig')
-        self.hosts_file = os.path.join(self.root_dir, 'hosts')
-        self.gpexpand_file = os.path.join(self.root_dir, 'gpexpand_input')
+        self.init_file = os.path.join(self.base_dir, 'gpinitconfig')
+        self.hosts_file = os.path.join(self.base_dir, 'hosts')
+        self.gpexpand_file = os.path.join(self.base_dir, 'gpexpand_input')
 
-        self.primary_dir = os.path.join(self.root_dir, 'data/primary')
-        self.mirror_dir = os.path.join(self.root_dir, 'data/mirror')
-        self.master_dir = os.path.join(self.root_dir, 'data/master')
+        self.primary_dir = os.path.join(self.base_dir, 'data/primary')
+        self.mirror_dir = os.path.join(self.base_dir, 'data/mirror')
+        self.master_dir = os.path.join(self.base_dir, 'data/master')
 
         # Test metadata
         # Whether to do gpinitsystem or not
@@ -108,45 +108,8 @@ class Gpinitsystem:
         self.number_of_expansion_segments = 0
         self.number_of_parallel_table_redistributed = 4
 
-    def run(self):
-        segment_host_file = '/tmp/segment_hosts'
-        with open(segment_host_file, 'w') as f:
-            for host in self.hosts:
-                f.write(host)
-                f.write('\n')
-
-        create_master_dir_cmd = "rm -rf %s; mkdir -p %s" % (self.master_dir, self.master_dir)
-        res = run_shell_command(create_master_dir_cmd, 'create master dir', verbose=True)
-        if res['rc'] > 0:
-            raise Exception("Failed to create master directory")
-
-        create_primary_dirs_cmd = "gpssh -f %s -e 'rm -rf %s; mkdir -p %s'" % (segment_host_file, self.primary_dir, self.primary_dir)
-        res = run_shell_command(create_primary_dirs_cmd, 'create segment dirs', verbose=True)
-        if res['rc'] > 0:
-            raise Exception("Failed to create segment directories")
-
-        create_mirror_dirs_cmd = "gpssh -f %s -e 'rm -rf %s; mkdir -p %s'" % (segment_host_file, self.mirror_dir, self.mirror_dir)
-        res = run_shell_command(create_mirror_dirs_cmd, 'create segment dirs', verbose=True)
-        if res['rc'] > 0:
-            raise Exception("Failed to create segment directories")
-
-        # Generate the config files to initialize the cluster
-        self._generate_gpinit_config_files()
-        assert os.path.exists(self.init_file)
-        assert os.path.exists(self.hosts_file)
-
-        # run gpinitsystem
-        clean_env = 'unset MASTER_DATA_DIRECTORY; unset PGPORT;'
-        gpinitsystem_cmd = 'gpinitsystem -a -c  %s' % (self.init_file)
-        res = run_shell_command(clean_env + gpinitsystem_cmd, 'run gpinitsystem', verbose=True)
-        # initsystem returns 1 for warnings and 2 for errors
-        if res['rc'] > 1:
-            raise Exception("Failed initializing the cluster. Look into gpAdminLogs for more information")
-
-        self._generate_env_file()
-
     def _generate_env_file(self):
-        env_file = os.path.join(self.root_dir, 'gpdb-env.sh')
+        env_file = os.path.join(self.base_dir, 'gpdb-env.sh')
         with open(env_file, 'w') as f:
             f.write('#!/usr/bin/env bash\n')
             f.write('export MASTER_DATA_DIRECTORY=%s\n' % os.path.join(self.master_dir,'gpseg-1'))
@@ -175,6 +138,24 @@ class Gpinitsystem:
 
         config_template = self.gpinitconfig_mirror_template if self.mirror_enabled else self.gpinitconfig_template
         substitute_strings_in_file(config_template, self.init_file, transforms)
+
+    def reset_cluster(self):
+        reset_hosts(self.hosts, test_base_dir = self.base_dir)
+
+    def create_cluster(self):
+        # Generate the config files to initialize the cluster
+        self._generate_gpinit_config_files()
+        assert os.path.exists(self.init_file)
+        assert os.path.exists(self.hosts_file)
+
+        # run gpinitsystem
+        clean_env = 'unset MASTER_DATA_DIRECTORY; unset PGPORT;'
+        gpinitsystem_cmd = clean_env + 'gpinitsystem -a -c  %s' % (self.init_file)
+        res = run_shell_command(gpinitsystem_cmd, 'run gpinitsystem', verbose=True)
+        # initsystem returns 1 for warnings and 2 for errors
+        if res['rc'] > 1:
+            raise Exception("Failed initializing the cluster. Look into gpAdminLogs for more information")
+        self._generate_env_file()
 
 
 ###
@@ -228,11 +209,35 @@ def run_shell_command(cmdstr, cmdname = 'shell command', results={'rc':0, 'stdou
             print "command error: %s" % results['stderr']
     return results
 
+def reset_hosts(hosts, test_base_dir):
+
+    primary_dir = os.path.join(test_base_dir, 'data/primary')
+    mirror_dir = os.path.join(test_base_dir, 'data/mirror')
+    master_dir = os.path.join(test_base_dir, 'data/master')
+
+    host_args = " ".join(map(lambda x: "-h %s" % x, hosts))
+    reset_primary_dirs_cmd = "gpssh %s -e 'rm -rf %s; mkdir -p %s'" % (host_args, primary_dir, primary_dir)
+    res = run_shell_command(reset_primary_dirs_cmd, 'reset segment dirs', verbose=True)
+    if res['rc'] > 0:
+        raise Exception("Failed to reset segment directories")
+
+    reset_mirror_dirs_cmd = "gpssh %s -e 'rm -rf %s; mkdir -p %s'" % (host_args, mirror_dir, mirror_dir)
+    res = run_shell_command(reset_mirror_dirs_cmd, 'reset segment dirs', verbose=True)
+    if res['rc'] > 0:
+        raise Exception("Failed to reset segment directories")
+
+    reset_master_dirs_cmd = "gpssh %s -e 'rm -rf %s; mkdir -p %s'" % (host_args, master_dir, master_dir)
+    res = run_shell_command(reset_master_dirs_cmd, 'reset segment dirs', verbose=True)
+    if res['rc'] > 0:
+        raise Exception("Failed to reset segment directories")
+
+
 ###
 # MAIN
 ###
 if __name__ == '__main__':
     # Trial on how we can use this
-    gpinitsystem = Gpinitsystem([])
-    gpinitsystem.run()
+    testcluster = TestCluster([])
+    testcluster.reset_cluster()
+    testcluster.create_cluster()
 

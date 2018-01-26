@@ -2269,9 +2269,11 @@ def impl(context, num_of_segments, num_of_hosts, hostnames):
         else:
             directory_pairs.append((tempfile.mkdtemp(dir='/tmp'),''))
 
-    hosts = hostnames.split(',')
-    if num_of_hosts != len(hosts):
-        raise Exception("Incorrect amount of hosts. number of hosts:%s\nhostnames: %s" % (num_of_hosts, hosts))
+    hosts = []
+    if num_of_hosts > 0:
+        hosts = hostnames.split(',')
+        if num_of_hosts != len(hosts):
+            raise Exception("Incorrect amount of hosts. number of hosts:%s\nhostnames: %s" % (num_of_hosts, hosts))
 
     #context.working_directory gets set during cluster initialization
     gpexpand = Gpexpand(working_directory=context.working_directory,

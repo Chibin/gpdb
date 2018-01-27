@@ -2261,13 +2261,7 @@ def impl(context):
 def impl(context, num_of_segments, num_of_hosts, hostnames):
     num_of_segments = int(num_of_segments)
     num_of_hosts = int(num_of_hosts)
-    directory_pairs = []
     mirror_enabled = False # This needs to be changeds later
-    for i in range(0, num_of_segments):
-        if mirror_enabled:
-            directory_pairs.append((tempfile.mkdtemp(dir='/tmp'),tempfile.mkdtemp(dir='/tmp')))
-        else:
-            directory_pairs.append((tempfile.mkdtemp(dir='/tmp'),''))
 
     hosts = []
     if num_of_hosts > 0:
@@ -2275,9 +2269,18 @@ def impl(context, num_of_segments, num_of_hosts, hostnames):
         if num_of_hosts != len(hosts):
             raise Exception("Incorrect amount of hosts. number of hosts:%s\nhostnames: %s" % (num_of_hosts, hosts))
 
-    #context.working_directory gets set during cluster initialization
-    gpexpand = Gpexpand(working_directory=context.working_directory,
-                        database='gptest')
+    temp_base_dir = context.temp_base_dir
+    primary_dir = os.path.join(temp_base_dir, 'data', 'primary')
+    mirror_dir = ''
+    if mirror_enabled:
+        mirror_dir = os.path.join(temp_base_dir, 'data', 'mirror')
+
+    directory_pairs = []
+    # we need to create the tuples for the interview to work.
+    for i in range(0, num_of_segments):
+        directory_pairs.append((primary_dir,mirror_dir))
+
+    gpexpand = Gpexpand(working_directory=context.working_directory, database='gptest')
     output, returncode = gpexpand.do_interview(hosts=hosts, num_of_segments=num_of_segments, directory_pairs=directory_pairs)
     if returncode != 0:
         raise Exception("*****An error occured*****:\n %s" % output)
@@ -2310,7 +2313,24 @@ def impl(context, num_of_segments):
 
     raise Exception("Incorrect amount of segments.\nprevious: %s\ncurrent: %s" % (context.start_data_segments, end_data_segments))
 
+@given('the current hosts is setup with for an expansion')
+def impl(context):
+    mirror_enabled = False # This needs to be changeds later
+
+    temp_base_dir = context.temp_base_dir
+    primary_dir = os.path.join(temp_base_dir, 'data', 'primary')
+    os.makedirs(primary_dir, 0700)
+
+    if mirror_enabled:
+        mirror_dir = os.path.join(temp_base_dir, 'data', 'mirror')
+        os.makedirs(mirror_dir, 0700)
+
+@given('a temporary directory to expand into')
+def impl(context):
+    context.temp_base_dir = tempfile.mkdtemp(dir='/tmp')
+
 @given('the new host "{hostnames}" is ready to go')
 def impl(context, hostnames):
     hosts = hostnames.split(',')
     reset_hosts(hosts, context.working_directory)
+    reset_hosts(hosts, context.temp_base_dir)
